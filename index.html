@@ -272,6 +272,9 @@ details.rvi[open] summary .t{font-weight:600}
       <label class="chip"><input type="radio" name="k" id="k-qm" value="qm">성경문제 + 암송</label>
       <label class="chip"><input type="radio" name="k" id="k-m" value="m">암송만</label>
     </div>
+    <div class="opts" id="memn-row" hidden>
+      <label class="chip numchip"><span>그중 암송</span><input type="number" id="m-num" inputmode="numeric" min="0" max="999" value="5" aria-label="암송 문제 수"><span>문제</span></label>
+    </div>
   </section>
   <section class="group">
     <h2>문제 수</h2>
@@ -467,11 +470,15 @@ function renderIndex(){
   }).join("");
   updateGo();
 }
+let kOv = null, cOv = null;
+function withOv(k, c, f){ const a=kOv, b=cOv; kOv=k; cOv=c; try { return f(); } finally { kOv=a; cOv=b; } }
+const kind = () => document.querySelector('input[name="k"]:checked').value;
+const memN = () => { const x = parseInt($("m-num").value,10); return x>=0 ? x : 5; };
 function basePool(){
   const t = ui.t, sel = new Set(ui.books[t]);
   const f = document.querySelector('input[name="f"]:checked').value;
   const o = document.querySelector('input[name="o"]:checked').value;
-  const k = document.querySelector('input[name="k"]:checked').value;
+  const k = kOv || kind();
   let qs = (k!=="m" ? DATA[t] : []).concat(k!=="q" ? MEMQ[t] : []).filter(q => !sel.size || sel.has(q.b));
   if (k==="qm") qs.sort((a,b)=>a.b-b.b);
   if (f==="new") qs = qs.filter(q=>!(q.id in rec));
@@ -513,7 +520,23 @@ function pastLabel(){
   const y = pastYear(); if (y==="none") return "출제되지 않은 문제";
   return mixOn() ? `기출 ${Math.round(mixRatio()*100)}% + 미출제` : "기출";
 }
+// 성경문제 + 암송: 암송 문제 수를 따로 정해서 섞는다
 function pool(){
+  if (kind()!=="qm") return pool1();
+  const pastOnly = isPast() && !mixOn();
+  let M = withOv("m", null, basePool); if (pastOnly) M = M.filter(q=>q.y);
+  let Qa = withOv("q", null, basePool); if (pastOnly) Qa = Qa.filter(q=>q.y);
+  const c = pickCount(Qa.length + M.length);
+  const m = Math.min(M.length, memN(), c);
+  const Q = withOv("q", c-m, pool1);
+  let qp = Q.mix ? Q.slice() : Q.slice(0, c-m);
+  const mp = shuffle(M.slice()).slice(0, m);
+  const seq = !isPast() && document.querySelector('input[name="o"]:checked').value==="seq";
+  const out = seq ? qp.concat(mp).sort((a,b)=>a.b-b.b) : shuffle(qp.concat(mp));
+  out.fixed = true; out.qm = {q: qp.length, m: mp.length, want: memN(), avail: M.length};
+  return out;
+}
+function pool1(){
   let qs = basePool();
   if (isPast()){
     const y = pastYear(), non = qs.filter(q=>!q.y);
@@ -549,6 +572,7 @@ function selLabel(){
   return names.length>2 ? `${names[0]} 외 ${names.length-1}권` : names.join(", ");
 }
 function pickCount(n){
+  if (cOv!=null) return Math.min(n, cOv);
   const v = document.querySelector('input[name="c"]:checked').value;
   if (v==="all") return n;
   if (v==="custom"){ const x = parseInt($("c-num").value,10); return x>0 ? Math.min(n,x) : Math.min(n,20); }
@@ -559,9 +583,13 @@ function updateGo(){
   const qs = lastPool = pool(), n = qs.length;
   $("go").disabled = !n;
   const c = pickCount(n);
-  $("go").textContent = n ? `${selLabel()} · ${pastLabel() || ""}${pastLabel()?" · ":""}${(qs.mix ? n : c).toLocaleString()}문제 풀기` : "조건에 맞는 문제가 없습니다";
+  $("memn-row").hidden = kind()!=="qm";
+  $("go").textContent = n ? `${selLabel()} · ${pastLabel() || ""}${pastLabel()?" · ":""}${(qs.mix||qs.fixed ? n : c).toLocaleString()}문제 풀기` : "조건에 맞는 문제가 없습니다";
   let hint = "";
-  if (n && qs.mix){
+  if (n && qs.qm){
+    hint = `성경문제 ${qs.qm.q}문제 + 암송 ${qs.qm.m}문제를 ` + (!isPast() && document.querySelector('input[name="o"]:checked').value==="seq" ? "책 순서대로 냅니다" : "섞어서 무작위로 냅니다") +
+      (qs.qm.m < qs.qm.want ? (qs.qm.avail < qs.qm.want ? ` · 조건에 맞는 암송 구절이 ${qs.qm.avail}개뿐이라 ${qs.qm.m}문제만 넣었습니다` : ` · 전체 문제 수보다 많아 암송 ${qs.qm.m}문제로 맞췄습니다`) : "");
+  } else if (n && qs.mix){
     const per = {}; qs.forEach(q=>{ if (q.y){ const y = qs.asg ? qs.asg.get(q.id) : pastYear(); per[y]=(per[y]||0)+1; } });
     hint = `기출 ${qs.mix.p}문제 + 출제되지 않은 문제 ${qs.mix.n}문제를 섞어 무작위로 냅니다` +
       (qs.mix.p + qs.mix.n < pickCount(qs.total) ? " · 문제가 모자라 비율이 조금 달라졌습니다" : "");
@@ -590,11 +618,13 @@ $("c-num").addEventListener("input", ()=>{ $("c-custom").checked = true; ui.cnum
 $("c-num").addEventListener("focus", ()=>{ $("c-custom").checked = true; updateGo(); });
 $("c-custom").addEventListener("change", ()=>$("c-num").focus());
 if (ui.cnum) $("c-num").value = ui.cnum;
+if (ui.mnum!=null) $("m-num").value = ui.mnum;
+$("m-num").addEventListener("input", ()=>{ ui.mnum = $("m-num").value; store.set("ui",ui); updateGo(); });
 $("go").onclick = ()=>{
   const qs = lastPool || pool(); if(!qs.length) return;
   const f = document.querySelector('input[name="f"]:checked').closest("label").textContent;
   const kl = document.querySelector('input[name="k"]:checked').closest("label").textContent;
-  let pick = qs.mix ? qs.slice() : qs.slice(0, pickCount(qs.length)); if (qs.strat) pick = shuffle(pick);
+  let pick = qs.mix||qs.fixed ? qs.slice() : qs.slice(0, pickCount(qs.length)); if (qs.strat) pick = shuffle(pick);
   const fl = isPast() ? pastLabel() : f;
   sess = {ids: pick.map(q=>q.id), i:0, res:{}, label: selLabel()+(kl==="성경문제"?"":" · "+kl)+(fl==="전체"?"":" · "+fl)};
   lastPool = null;
