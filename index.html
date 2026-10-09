@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>수련목 성경문제집</title>
+<title>감리교 성경문제집</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
@@ -211,6 +211,7 @@ details.rvi[open] summary .t{font-weight:600}
 .years-h{font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--gold)}
 .years .chip .n{font-size:11px}
 .mixr{display:inline-flex;flex-wrap:wrap;gap:8px}
+.numchip input.bookin{position:static;opacity:1;pointer-events:auto;width:5.5em;border:1px solid var(--line);border-radius:6px;background:var(--ground);color:var(--ink);font:inherit;padding:3px 6px;text-align:center}
 #mix-row[hidden]{display:none!important}
 .sthead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid var(--ink);padding-bottom:8px}
 .sthead h2{font-family:var(--serif);font-size:24px;letter-spacing:0;color:var(--ink);font-weight:700}
@@ -233,7 +234,7 @@ details.rvi[open] summary .t{font-weight:600}
 <div class="wrap" id="home">
   <nav class="nav" aria-label="메뉴"><button aria-current="page">문제풀이</button><button data-go="study">학습</button><button data-go="mem">암송</button></nav>
   <header class="mast">
-    <h1>성경문제집 <em>풀이</em></h1>
+    <h1>감리교 <em>성경문제집</em></h1>
   </header>
   <div class="stats" id="stats"></div>
   <div class="resume" id="resume" hidden></div>
@@ -278,13 +279,11 @@ details.rvi[open] summary .t{font-weight:600}
     <div class="years" id="mrange-box" hidden>
       <span class="years-h" id="mrange-head">암송 범위</span>
       <div class="opts">
-        <label class="chip"><input type="radio" name="msec" id="msec-all" value="all" checked>모든 구절</label>
-        <label class="chip"><input type="radio" name="msec" id="msec-1" value="1">1절</label>
-        <label class="chip"><input type="radio" name="msec" id="msec-2" value="2">2절 이상</label>
+        <label class="chip numchip"><span>책</span><input type="text" class="bookin" id="mb-from" list="mb-list" autocomplete="off" aria-label="암송 시작 책"><span>~</span><input type="text" class="bookin" id="mb-to" list="mb-list" autocomplete="off" aria-label="암송 끝 책"></label>
       </div>
-      <div class="opts" id="mrange-nums" hidden>
-        <label class="chip numchip"><span>번호</span><input type="number" id="mrng-from" inputmode="numeric" min="1" max="999" placeholder="1" aria-label="암송 시작 번호"><span>~</span><input type="number" id="mrng-to" inputmode="numeric" min="1" max="999" aria-label="암송 끝 번호"><span>번</span></label>
-      </div>
+      <datalist id="mb-list"></datalist>
+      <p class="hint" id="mrange-hint">책 이름이나 약자(예: 창, 시, 마)를 입력하세요. 비워 두면 처음이나 끝까지입니다.</p>
+    </div>
     </div>
   </section>
   <section class="group">
@@ -485,19 +484,25 @@ let kOv = null, cOv = null;
 function withOv(k, c, f){ const a=kOv, b=cOv; kOv=k; cOv=c; try { return f(); } finally { kOv=a; cOv=b; } }
 const kind = () => document.querySelector('input[name="k"]:checked').value;
 const memN = () => { const x = parseInt($("m-num").value,10); return x>=0 ? x : 5; };
-const memSec = () => (document.querySelector('input[name="msec"]:checked')||{}).value || "all";
-function memIn(q){
-  const sec = memSec(); if (sec==="all") return true;
-  if (q.m.s !== +sec) return false;
-  const a = parseInt($("mrng-from").value,10), z = parseInt($("mrng-to").value,10);
-  return !(a>0 && q.m.n<a) && !(z>0 && q.m.n>z);
+function findBook(str, t){
+  str = (str||"").trim().replace(/\s+/g,""); if (!str) return null;
+  const bs = [...new Set(DATA[t].map(q=>q.b).concat(MEMQ[t].map(q=>q.b)))].sort((a,b)=>a-b);
+  return bs.find(b=>DATA.books[b]===str) ?? bs.find(b=>ABBR[DATA.books[b]]===str) ?? bs.find(b=>DATA.books[b].startsWith(str)) ?? -1;
 }
+function memRange(){
+  let a = findBook($("mb-from").value, ui.t), z = findBook($("mb-to").value, ui.t);
+  const bad = [a===-1 && $("mb-from").value.trim(), z===-1 && $("mb-to").value.trim()].filter(Boolean);
+  if (a===-1) a = null; if (z===-1) z = null;
+  if (a!=null && z!=null && a>z) [a,z] = [z,a];
+  return {a, z, bad};
+}
+function memIn(q){ const {a,z} = memRange(); return !(a!=null && q.b<a) && !(z!=null && q.b>z); }
 function basePool(){
   const t = ui.t, sel = new Set(ui.books[t]);
   const f = document.querySelector('input[name="f"]:checked').value;
   const o = document.querySelector('input[name="o"]:checked').value;
   const k = kOv || kind();
-  let qs = (k!=="m" ? DATA[t] : []).concat(k!=="q" ? MEMQ[t] : []).filter(q => (!sel.size || sel.has(q.b)) && (q.k!=="mem" || memIn(q)));
+  let qs = (k!=="m" ? DATA[t] : []).concat(k!=="q" ? MEMQ[t] : []).filter(q => q.k==="mem" ? memIn(q) : (!sel.size || sel.has(q.b)));
   if (k==="qm") qs.sort((a,b)=>a.b-b.b);
   if (f==="new") qs = qs.filter(q=>!(q.id in rec));
   if (f==="wrong") qs = qs.filter(q=>rec[q.id]===0);
@@ -591,10 +596,13 @@ function selLabel(){
 }
 function renderMemRange(){
   const box = $("mrange-box"); box.hidden = kind()==="q"; if (box.hidden) return;
-  const sec = memSec(); $("mrange-nums").hidden = sec==="all";
-  if (sec!=="all"){ const mx = Math.max(0, ...MEMQ[ui.t].filter(q=>q.m.s===+sec).map(q=>q.m.n)); $("mrng-to").placeholder = mx; $("mrng-from").max = $("mrng-to").max = mx; }
-  const n = withOv("m", null, basePool).length;
-  $("mrange-head").textContent = `암송 범위 · ${ui.t==="ot"?"구약":"신약"} ${n}구절`;
+  const bs = [...new Set(MEMQ[ui.t].map(q=>q.b))].sort((a,b)=>a-b);
+  $("mb-list").innerHTML = bs.map(b=>`<option value="${DATA.books[b]}">`).join("");
+  $("mb-from").placeholder = DATA.books[bs[0]]; $("mb-to").placeholder = DATA.books[bs[bs.length-1]];
+  const {a, z, bad} = memRange(), n = withOv("m", null, basePool).length;
+  const rng = a==null && z==null ? "전체" : `${a!=null?DATA.books[a]:"처음"} ~ ${z!=null?DATA.books[z]:"끝"}`;
+  $("mrange-head").textContent = `암송 범위 · ${ui.t==="ot"?"구약":"신약"} ${rng} · ${n}구절`;
+  $("mrange-hint").textContent = bad.length ? `‘${bad.join("’, ‘")}’에 해당하는 책을 찾지 못했습니다. 구약/신약 선택을 확인해 주세요.` : "책 이름이나 약자(예: 창, 시, 마)를 입력하세요. 비워 두면 처음이나 끝까지입니다.";
 }
 function pickCount(n){
   if (cOv!=null) return Math.min(n, cOv);
@@ -635,7 +643,7 @@ $("index").addEventListener("click", e=>{
   else return;
   store.set("ui",ui); renderIndex();
 });
-document.querySelectorAll("#home .seg button").forEach(b=>b.onclick=()=>{ ui.t=b.dataset.t; store.set("ui",ui); renderIndex(); });
+document.querySelectorAll("#home .seg button").forEach(b=>b.onclick=()=>{ ui.t=b.dataset.t; store.set("ui",ui); $("mb-from").value = ui.mb?.[ui.t]?.[0]||""; $("mb-to").value = ui.mb?.[ui.t]?.[1]||""; renderIndex(); });
 document.querySelectorAll('#home input[type="radio"]').forEach(r=>r.onchange=updateGo);
 document.querySelectorAll('input[name="mr"]').forEach(r=>r.addEventListener("change", ()=>{ ui.mr = r.value; store.set("ui",ui); updateGo(); }));
 if (ui.mr && ui.mix!==undefined && !ui.mix && ui.mr!=="1") ui.mr = "1";
@@ -646,11 +654,8 @@ $("c-custom").addEventListener("change", ()=>$("c-num").focus());
 if (ui.cnum) $("c-num").value = ui.cnum;
 if (ui.mnum!=null) $("m-num").value = ui.mnum;
 $("m-num").addEventListener("input", ()=>{ ui.mnum = $("m-num").value; store.set("ui",ui); updateGo(); });
-if (ui.msec){ const r = $("msec-"+ui.msec); if (r) r.checked = true; }
-if (ui.mfrom) $("mrng-from").value = ui.mfrom;
-if (ui.mto) $("mrng-to").value = ui.mto;
-document.querySelectorAll('input[name="msec"]').forEach(r=>r.addEventListener("change", ()=>{ ui.msec = r.value; store.set("ui",ui); }));
-["mrng-from","mrng-to"].forEach(id=>$(id).addEventListener("input", ()=>{ ui.mfrom = $("mrng-from").value; ui.mto = $("mrng-to").value; store.set("ui",ui); updateGo(); }));
+if (ui.mb){ $("mb-from").value = ui.mb[ui.t]?.[0]||""; $("mb-to").value = ui.mb[ui.t]?.[1]||""; }
+["mb-from","mb-to"].forEach(id=>$(id).addEventListener("input", ()=>{ ui.mb = ui.mb||{}; ui.mb[ui.t] = [$("mb-from").value, $("mb-to").value]; store.set("ui",ui); updateGo(); }));
 $("go").onclick = ()=>{
   const qs = lastPool || pool(); if(!qs.length) return;
   const f = document.querySelector('input[name="f"]:checked').closest("label").textContent;
