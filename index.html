@@ -272,6 +272,14 @@ details.rvi[open] summary .t{font-weight:600}
     </div>
   </section>
   <section class="group">
+    <h2>출제 방식</h2>
+    <div class="opts">
+      <label class="chip"><input type="radio" name="vary" id="vary-0" value="0" checked>원래 문제 그대로</label>
+      <label class="chip"><input type="radio" name="vary" id="vary-1" value="1">변형 문제</label>
+    </div>
+    <p class="hint" id="vary-hint" hidden>객관식은 보기 순서를 섞고, 빈칸 문제는 빈칸 하나를 다른 단어로 바꿔서 냅니다. 매번 무작위로 조금씩 바뀝니다.</p>
+  </section>
+  <section class="group">
     <h2>문제 종류</h2>
     <div class="opts">
       <label class="chip"><input type="radio" name="k" id="k-q" value="q" checked>성경문제</label>
@@ -683,6 +691,9 @@ $("c-custom").addEventListener("change", ()=>$("c-num").focus());
 if (ui.cnum) $("c-num").value = ui.cnum;
 if (ui.mnum!=null) $("m-num").value = ui.mnum;
 if (ui.mdiff) $("md-"+ui.mdiff).checked = true;
+if (ui.vary) $("vary-"+ui.vary).checked = true;
+$("vary-hint").hidden = ui.vary!=="1";
+document.querySelectorAll('input[name="vary"]').forEach(r=>r.addEventListener("change", ()=>{ ui.vary = r.value; store.set("ui",ui); $("vary-hint").hidden = ui.vary!=="1"; updateGo(); }));
 document.querySelectorAll('input[name="mdiff"]').forEach(r=>r.addEventListener("change", ()=>{ ui.mdiff = r.value; store.set("ui",ui); updateGo(); }));
 $("m-num").addEventListener("input", ()=>{ ui.mnum = $("m-num").value; store.set("ui",ui); updateGo(); });
 if (ui.mtt) $("mtt-"+ui.mtt).checked = true;
@@ -696,7 +707,7 @@ $("go").onclick = ()=>{
   const kl = document.querySelector('input[name="k"]:checked').closest("label").textContent;
   let pick = qs.mix||qs.fixed ? qs.slice() : qs.slice(0, pickCount(qs.length)); if (qs.strat) pick = shuffle(pick);
   const fl = isPast() ? pastLabel() : f;
-  sess = {ids: pick.map(q=>q.id), i:0, res:{}, label: selLabel()+(kl==="성경문제"?"":" · "+kl)+(fl==="전체"?"":" · "+fl)};
+  sess = {ids: pick.map(q=>q.id), i:0, res:{}, vary: ui.vary==="1", label: selLabel()+(kl==="성경문제"?"":" · "+kl)+(fl==="전체"?"":" · "+fl)+(ui.vary==="1"?" · 변형":"")};
   lastPool = null;
   store.set("sess",sess); show("quiz"); renderQ();
 };
@@ -723,16 +734,80 @@ function rich(s, how="blank"){
     return m ? `( ${mid} )` : mid;
   }).join("");
 }
+/* ---------- 변형 문제 ---------- */
+const VAR_NAMES = ["여호와","하나님","예수","그리스도","이스라엘","예루살렘","성령","아브라함","모세","다윗","솔로몬","바울","베드로"];
+const VAR_PART = ["에게서","에게","에서","으로","까지","부터","보다","처럼","은","는","이","가","을","를","의","에","와","과","도","로"];
+const VAR_STOP = new Set(["우리","너희","그들","나의","내가","이것","그것","저것","모든","자기","무엇","누구","어디","거기","여기","그러나","그러므로","이는","그가","네가","너의","주의","주께서"]);
+function varCore(tok){
+  const w = tok.replace(/^[“"‘'(\[]+|[”"’'),.!?:;\]…]+$/g,"");
+  if (!/^[가-힣]+$/.test(w)) return null;
+  for (const n of VAR_NAMES) if (w.startsWith(n)) return n.length>=2 ? n : null;
+  for (const pt of VAR_PART) if (w.length-pt.length>=2 && w.endsWith(pt)){
+    const c = w.slice(0, w.length-pt.length);
+    if (VAR_STOP.has(c) || /(하|시|되|있|없|었|았|했|겠|며|고|니|던|지|게|여|다|라|요|면|서)$/.test(c)) return null;
+    return c;
+  }
+  return null;
+}
+function shuffleOpts(o){
+  const fixed = o.map(x=>/모두|없다|없음|[①-⑤]|위의|둘 다/.test(x[0]));
+  const free = o.map((x,i)=>i).filter(i=>!fixed[i]);
+  if (free.length<2) return null;
+  for (let tries=0; tries<6; tries++){
+    const sh = shuffle(free.slice()), out = o.slice(); free.forEach((i,k)=>out[i]=o[sh[k]]);
+    if (out.some((x,i)=>x!==o[i])) return out;
+  }
+  return null;
+}
+// 빈칸 하나를 풀어서 본문에 넣고, 같은 구절의 다른 단어 하나를 새 빈칸으로 만든다
+function swapBlank(q){
+  const fields = [];
+  (q.L||[]).forEach((l,i)=>fields.push(["L",i,l])); fields.push(["q",-1,q.q]);
+  const withBlank = fields.filter(f=>/\{\{/.test(f[2]));
+  if (!withBlank.length) return null;
+  const f = withBlank[Math.floor(Math.random()*withBlank.length)];
+  const blanks = [...f[2].matchAll(/\{\{([\s\S]*?)\}\}/g)];
+  const pick = blanks[Math.floor(Math.random()*blanks.length)];
+  const paren = /^\s*\(/.test(pick[1]); const ans = pick[1].replace(/^\s*\(\s*|\s*\)\s*$/g,"").trim();
+  const text = f[2].slice(0,pick.index) + ans + f[2].slice(pick.index+pick[0].length);
+  // 후보: 빈칸 밖의 단어 중 명사처럼 보이는 것, 원래 빈칸과 다른 단어
+  const toks = []; let re = /\{\{[\s\S]*?\}\}|\S+/g, m;
+  while ((m = re.exec(text))) toks.push({s:m[0], at:m.index});
+  const cands = toks.filter((t,i)=>!t.s.includes("{{") && (i===0 || !toks[i-1].s.includes("{{")) && (i===toks.length-1 || !toks[i+1].s.includes("{{")))
+    .map(t=>({t, c:varCore(t.s)})).filter(x=>x.c && x.c!==ans && x.t.at>=0);
+  if (!cands.length) return null;
+  const ch = cands[Math.floor(Math.random()*cands.length)];
+  const k = ch.t.s.indexOf(ch.c), wrapped = paren ? `{{( ${ch.c} )}}` : `{{${ch.c}}}`;
+  const tok2 = ch.t.s.slice(0,k) + wrapped + ch.t.s.slice(k+ch.c.length);
+  const newText = text.slice(0,ch.t.at) + tok2 + text.slice(ch.t.at+ch.t.s.length);
+  const v = {};
+  if (f[0]==="L"){ v.L = q.L.slice(); v.L[f[1]] = newText; } else v.q = newText;
+  return v;
+}
+function makeVariant(q){
+  if (q.k==="mem" || q.k==="match") return null;
+  const mode = qmode(q);
+  if (mode==="mc"){ if (q.o.length===2) return null; const o = shuffleOpts(q.o); return o ? {o} : null; }
+  if (mode==="blank") return swapBlank(q);
+  return null;
+}
+// 이번 회차에서 보여줄 문제 (변형이 있으면 덮어쓴다)
+function qv(id){
+  const b = ALL[id]; if (!sess || !sess.vary || b.k==="mem") return b;
+  sess.var = sess.var || {};
+  if (!(id in sess.var)){ sess.var[id] = makeVariant(b) || 0; store.set("sess", sess); }
+  return sess.var[id] ? Object.assign({}, b, sess.var[id], {varied:true}) : b;
+}
 function hasRed(q){ return /\{\{/.test(q.q + (q.L||[]).join("")); }
 function renderQ(){
-  const q = ALL[sess.ids[sess.i]], mode = qmode(q);
+  const q = qv(sess.ids[sess.i]), mode = qmode(q);
   sess.ans = sess.ans || {};
   state = {picked:new Set(), done: sess.res[q.id]!==undefined};
   $("q-pos").textContent = `${sess.i+1} / ${sess.ids.length}`;
   $("q-prog").style.width = (sess.i/sess.ids.length*100)+"%";
   $("q-prev").disabled = sess.i===0; $("q-prev").style.visibility = sess.i===0?"hidden":"visible";
   const nOk = (q.o||[]).filter(o=>o[1]).length;
-  let h = `<div class="meta">` + (mode==="mem" ? `<span class="badge red">암송</span>` : `<span class="badge plain">${DATA.books[q.b]}</span>`);
+  let h = `<div class="meta">` + (mode==="mem" ? `<span class="badge red">암송</span>` : `<span class="badge plain">${DATA.books[q.b]}</span>`) + (q.varied ? `<span class="badge gold">변형</span>` : "");
   if (mode==="mc" && nOk>1) h += `<span class="badge plain">${nOk}개 고르기</span>`;
   if (rec[q.id]===0) h += `<span class="badge red">지난번에 틀림</span>`;
   h += `</div>`;
@@ -808,6 +883,7 @@ function submit(q){
     const v = $("ans-text").value; ans = {t:v};
     ok = mode==="mem" ? norm(v)===norm(q.m.L.map(x=>x.t).join(" ")) : textOk(v, q.a, q.k==="match");
   }
+  if (q.varied) ans.v = sess.var[q.id];
   sess.ans[q.id] = ans; lastAns[q.id] = ans; store.set("ans", lastAns);
   record(q, ok?1:0);
   showGraded(q);
@@ -889,7 +965,7 @@ function showResult(){
   $("r-sub").textContent = ids.length ? `정답률 ${Math.round(ok/ids.length*100)}%` : "푼 문제가 없습니다";
   const wrong = ids.filter(id=>sess.res[id]===0);
   $("r-retry").hidden = !wrong.length;
-  $("r-retry").onclick = ()=>{ sess = {ids:wrong, i:0, res:{}, label:"방금 틀린 문제"}; store.set("sess",sess); show("quiz"); renderQ(); };
+  $("r-retry").onclick = ()=>{ sess = {ids:wrong, i:0, res:{}, vary: ui.vary==="1", label:"방금 틀린 문제"}; store.set("sess",sess); show("quiz"); renderQ(); };
   $("r-list").innerHTML = ids.map(id=>{ const q=ALL[id], r=sess.res[id];
     return `<div class="ritem"><span class="mk ${r?"ok":"no"}">${r?"○":"✕"}</span><span class="t">${rich(q.q).replace(/<span class="blank">.*?<\/span>/g,"     ")}</span><span class="src">${q.k==="mem"?"암송":DATA.books[q.b]}</span></div>`; }).join("");
   sess = null; store.set("sess",null);
@@ -916,6 +992,7 @@ function myAnswerText(q, a){
   return null;
 }
 function reviewDetail(q){
+  const lv = (lastAns[q.id]||{}).v; if (lv) q = Object.assign({}, q, lv, {varied:true});
   const ok = rec[q.id]===1, mine = myAnswerText(q, lastAns[q.id]);
   let h = "";
   if (q.k==="mem"){
@@ -951,7 +1028,7 @@ function renderReview(){
   $("rv-act").innerHTML = ids.length ? `<button class="btn primary" id="rv-go">${RVTITLE[rv.f]} ${ids.length.toLocaleString()}개 다시 풀기</button>` : "";
   if (ids.length) $("rv-go").onclick = ()=>startSession(ids, `${RVTITLE[rv.f]} 다시 풀기`);
 }
-function startSession(ids, label){ sess = {ids, i:0, res:{}, label}; store.set("sess",sess); show("quiz"); renderQ(); }
+function startSession(ids, label){ sess = {ids, i:0, res:{}, vary: ui.vary==="1", label}; store.set("sess",sess); show("quiz"); renderQ(); }
 $("rv-list").addEventListener("toggle", e=>{
   const d = e.target; if (!d.open || d.dataset.filled) return;
   d.querySelector(".rvd").innerHTML = reviewDetail(ALL[d.dataset.id]); d.dataset.filled = 1;
