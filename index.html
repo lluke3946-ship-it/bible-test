@@ -444,6 +444,7 @@ let sess = store.get("sess", null);
 const ALL = {};
 for (const t of ["ot","nt"]) DATA[t].forEach((q,i)=>{ q.id = t+":"+i; q.t = t; q.no = i+1; ALL[q.id]=q; });
 const MEMQ = {ot:[], nt:[]};
+MEM.sort((a,b)=> (a.t===b.t?0:a.t==="ot"?-1:1) || DATA.books.indexOf(a.book)-DATA.books.indexOf(b.book) || a.ch-b.ch || a.v1-b.v1);
 MEM.forEach(r=>{ const q = {id:"m:"+r.id, t:r.t, k:"mem", b:DATA.books.indexOf(r.book), q:`${r.ref} 암송`, src:`암송 ${r.s}-${r.n}`, m:r};
   if (r.y) q.y = r.y; ALL[q.id]=q; MEMQ[r.t].push(q); });
 
@@ -1021,9 +1022,8 @@ function renderMem(){
   $("m-rnd").textContent = mui.rnd ? "무작위" : "순서대로"; $("m-rnd").setAttribute("aria-pressed", mui.rnd);
   const list = memPool(); let h = "", sec = "";
   for (const r of list){
-    const k = r.t + r.s; if (k!==sec){ sec=k; h += `<div class="vsec">${SECT[k]}</div>`; }
+    const k = r.t + r.book; if (k!==sec){ sec=k; h += `<div class="vsec">${r.t==="ot"?"구약":"신약"} · ${esc(r.book)}</div>`; }
     h += `<article class="verseitem" data-id="${r.id}"><div class="vhead"><span class="vref">${esc(r.ref)}</span><span class="vnum">${r.t==="ot"?"구약":"신약"} ${r.s}-${r.n}</span>`+
-      (r.y||[]).map(y=>`<span class="badge gold">${y} 기출</span>`).join("") +
       `<button class="mark" aria-pressed="${memrec[r.id]===1}">${memrec[r.id]===1?"외웠음 ✓":"외웠어요"}</button></div>` +
       vlines(r, mui.mode) + fixNote(r) + `</article>`;
   }
@@ -1047,7 +1047,7 @@ function renderCard(){
   $("c-pos").textContent = `${csess.i+1} / ${csess.ids.length}`;
   $("c-prog").style.width = (csess.i/csess.ids.length*100)+"%";
   $("c-prev").style.visibility = csess.i ? "visible" : "hidden";
-  $("c-body").innerHTML = `<div class="meta"><span class="badge plain">${r.t==="ot"?"구약":"신약"} ${r.s}-${r.n}</span>${(r.y||[]).map(y=>`<span class="badge gold">${y} 기출</span>`).join("")}${memrec[r.id]===0?'<span class="badge red">다시 볼 구절</span>':""}</div>
+  $("c-body").innerHTML = `<div class="meta"><span class="badge plain">${r.t==="ot"?"구약":"신약"} ${r.s}-${r.n}</span>${memrec[r.id]===0?'<span class="badge red">다시 볼 구절</span>':""}</div>
     <div class="cardref">${esc(r.ref)}</div><div class="cue">${esc(r.cue)} …</div>
     <div id="c-text">${vlines(r,"start")}</div><div id="c-extra"></div>`;
   $("c-body").querySelectorAll(".cover").forEach(c=>c.onclick=()=>{ c.classList.add("open"); c.disabled=true; cardState(r); });
