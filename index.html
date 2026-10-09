@@ -251,15 +251,12 @@ details.rvi[open] summary .t{font-weight:600}
       <label class="chip"><input type="radio" name="f" id="f-past" value="past">기출 문제</label>
     </div>
     <div class="years" id="pastyears" hidden>
-      <span class="years-h">출제 연도</span>
-      <div class="opts" id="py-opts"></div>
-      <div class="opts" id="mix-row">
-        <label class="chip"><input type="checkbox" id="mix-on">출제되지 않은 문제도 함께</label>
-        <span class="mixr" id="mix-ratio" hidden>
-          <label class="chip"><input type="radio" name="mr" id="mr-7" value="0.7">기출 70%</label>
-          <label class="chip"><input type="radio" name="mr" id="mr-5" value="0.5" checked>기출 50%</label>
-          <label class="chip"><input type="radio" name="mr" id="mr-3" value="0.3">기출 30%</label>
-        </span>
+      <span class="years-h" id="py-head">기출 비율</span>
+      <div class="opts">
+        <label class="chip"><input type="radio" name="mr" id="mr-10" value="1" checked>기출만</label>
+        <label class="chip"><input type="radio" name="mr" id="mr-7" value="0.7">기출 70%</label>
+        <label class="chip"><input type="radio" name="mr" id="mr-5" value="0.5">기출 50%</label>
+        <label class="chip"><input type="radio" name="mr" id="mr-3" value="0.3">기출 30%</label>
       </div>
     </div>
     <div class="opts">
@@ -483,7 +480,7 @@ function basePool(){
   return qs;
 }
 const isPast = () => document.querySelector('input[name="f"]:checked').value==="past";
-const pastYear = () => (document.querySelector('input[name="py"]:checked')||{}).value || "all";
+const pastYear = () => "all";
 // 기출 전체: 연도별로 고르게, 연도 안에서는 책 묶음을 번갈아 뽑는다
 // 책 묶음을 번갈아 가며 무작위로 섞기
 function diverse(list){
@@ -492,7 +489,8 @@ function diverse(list){
   for (let i=0; out.length<list.length; i++) for (const l of lanes) if (l[i]) out.push(l[i]);
   return out;
 }
-const mixOn = () => $("mix-on").checked && pastYear()!=="none";
+const mixRatio = () => +((document.querySelector('input[name="mr"]:checked')||{}).value || 1);
+const mixOn = () => mixRatio() < 1;
 function stratify(qs){
   const byYear = {}, asg = new Map();
   for (const q of shuffle(qs.slice())){ const y = q.y[Math.floor(Math.random()*q.y.length)]; asg.set(q.id, y); (byYear[y] ||= []).push(q); }
@@ -513,7 +511,7 @@ let lastPool = null;
 function pastLabel(){
   if (!isPast()) return "";
   const y = pastYear(); if (y==="none") return "출제되지 않은 문제";
-  return (y==="all" ? "기출 전체" : y+" 기출") + (mixOn() ? ` + 미출제 (기출 ${Math.round(+document.querySelector('input[name="mr"]:checked').value*100)}%)` : "");
+  return mixOn() ? `기출 ${Math.round(mixRatio()*100)}% + 미출제` : "기출";
 }
 function pool(){
   let qs = basePool();
@@ -526,7 +524,7 @@ function pool(){
       const P = y==="all" ? stratify(past) : (mixOn() || document.querySelector('input[name="o"]:checked').value==="rnd" ? diverse(past) : past);
       if (!mixOn()){ if (y==="all") P.strat = true; return P; }
       // 기출 + 미출제 섞기: 고른 문제 수와 비율에 맞춰 나눈다
-      const c = pickCount(P.length + non.length), ratio = +document.querySelector('input[name="mr"]:checked').value;
+      const c = pickCount(P.length + non.length), ratio = mixRatio();
       let nP = Math.min(P.length, Math.round(c*ratio)), nN = Math.min(non.length, c-nP); nP = Math.min(P.length, c-nN);
       const pick = P.slice(0,nP), N = diverse(non).slice(0,nN);
       const out = shuffle(pick.concat(N));
@@ -539,16 +537,9 @@ function pool(){
 }
 function renderYears(){
   const box = $("pastyears"); box.hidden = !isPast(); if (box.hidden) return;
-  const cur = pastYear(), cnt = {}; let all = 0, none = 0;
-  basePool().forEach(q=>{ if (!q.y){ none++; return; } all++; q.y.forEach(y=>cnt[y]=(cnt[y]||0)+1); });
-  const ys = Object.keys(cnt).sort();
-  const curOk = cur==="all" || (cur==="none" ? none : cnt[cur]);
-  $("py-opts").innerHTML = `<label class="chip"><input type="radio" name="py" id="py-all" value="all" ${cur==="all"||!curOk?"checked":""}>전체 <span class="n">${all}</span></label>` +
-    ys.map(y=>`<label class="chip"><input type="radio" name="py" id="py-${y}" value="${y}" ${cur===y&&curOk?"checked":""}>${y} <span class="n">${cnt[y]}</span></label>`).join("") +
-    `<label class="chip"><input type="radio" name="py" id="py-none" value="none" ${cur==="none"&&curOk?"checked":""}>미출제 <span class="n">${none}</span></label>`;
-  $("py-opts").querySelectorAll("input").forEach(r=>r.onchange=updateGo);
-  $("mix-row").hidden = pastYear()==="none";
-  $("mix-ratio").hidden = !$("mix-on").checked;
+  let all = 0, none = 0;
+  basePool().forEach(q=>{ q.y ? all++ : none++; });
+  $("py-head").textContent = `기출 비율 · 기출 ${all.toLocaleString()} / 미출제 ${none.toLocaleString()}`;
 }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 function selLabel(){
@@ -573,12 +564,11 @@ function updateGo(){
   if (n && qs.mix){
     const per = {}; qs.forEach(q=>{ if (q.y){ const y = qs.asg ? qs.asg.get(q.id) : pastYear(); per[y]=(per[y]||0)+1; } });
     hint = `기출 ${qs.mix.p}문제 + 출제되지 않은 문제 ${qs.mix.n}문제를 섞어 무작위로 냅니다` +
-      (Object.keys(per).length>1 ? ` · 기출 연도별 ` + Object.keys(per).sort().map(y=>`${String(y).slice(2)}년 ${per[y]}`).join(" · ") : "") +
       (qs.mix.p + qs.mix.n < pickCount(qs.total) ? " · 문제가 모자라 비율이 조금 달라졌습니다" : "");
   } else if (n && qs.strat){
     const per = {}; qs.slice(0,c).forEach(q=>{ const y = qs.asg.get(q.id); per[y]=(per[y]||0)+1; });
     const ys = Object.keys(per).sort();
-    hint = `기출 ${n.toLocaleString()}문제에서 연도별로 고르게 ${c.toLocaleString()}문제를 뽑아 무작위 순서로 냅니다 · ` + ys.map(y=>`${y.slice(2)}년 ${per[y]}`).join(" · ");
+    hint = `기출 ${n.toLocaleString()}문제 중 ${c.toLocaleString()}문제를 무작위로 냅니다`;
   } else if (n) hint = `조건에 맞는 문제 ${n.toLocaleString()}개 중 ${c.toLocaleString()}개를 풉니다.` + (document.querySelector('input[name="o"]:checked').value==="rnd" ? " 무작위로 뽑습니다." : " 앞에서부터 차례로 풉니다.");
   $("c-hint").textContent = hint;
 }
@@ -593,9 +583,8 @@ $("index").addEventListener("click", e=>{
 });
 document.querySelectorAll("#home .seg button").forEach(b=>b.onclick=()=>{ ui.t=b.dataset.t; store.set("ui",ui); renderIndex(); });
 document.querySelectorAll('#home input[type="radio"]').forEach(r=>r.onchange=updateGo);
-$("mix-on").addEventListener("change", ()=>{ ui.mix = $("mix-on").checked; store.set("ui",ui); updateGo(); });
-document.querySelectorAll('input[name="mr"]').forEach(r=>r.addEventListener("change", ()=>{ ui.mr = r.value; store.set("ui",ui); }));
-if (ui.mix) $("mix-on").checked = true;
+document.querySelectorAll('input[name="mr"]').forEach(r=>r.addEventListener("change", ()=>{ ui.mr = r.value; store.set("ui",ui); updateGo(); }));
+if (ui.mr && ui.mix!==undefined && !ui.mix && ui.mr!=="1") ui.mr = "1";
 if (ui.mr){ const r = document.querySelector(`input[name="mr"][value="${ui.mr}"]`); if (r) r.checked = true; }
 $("c-num").addEventListener("input", ()=>{ $("c-custom").checked = true; ui.cnum = $("c-num").value; store.set("ui",ui); updateGo(); });
 $("c-num").addEventListener("focus", ()=>{ $("c-custom").checked = true; updateGo(); });
