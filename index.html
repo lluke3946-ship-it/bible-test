@@ -211,7 +211,7 @@ details.rvi[open] summary .t{font-weight:600}
 .years-h{font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--gold)}
 .years .chip .n{font-size:11px}
 .mixr{display:inline-flex;flex-wrap:wrap;gap:8px}
-.numchip input.bookin{position:static;opacity:1;pointer-events:auto;width:5.5em;border:1px solid var(--line);border-radius:6px;background:var(--ground);color:var(--ink);font:inherit;padding:3px 6px;text-align:center}
+.numchip input.bookin{position:static;opacity:1;pointer-events:auto;width:6.5em;border:1px solid var(--line);border-radius:6px;background:var(--ground);color:var(--ink);font:inherit;padding:3px 6px;text-align:center}
 #mix-row[hidden]{display:none!important}
 .sthead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid var(--ink);padding-bottom:8px}
 .sthead h2{font-family:var(--serif);font-size:24px;letter-spacing:0;color:var(--ink);font-weight:700}
@@ -290,6 +290,11 @@ details.rvi[open] summary .t{font-weight:600}
     </div>
     <div class="years" id="mrange-box" hidden>
       <span class="years-h" id="mrange-head">암송 범위</span>
+      <div class="opts">
+        <label class="chip"><input type="radio" name="mtt" id="mtt-ot" value="ot">구약</label>
+        <label class="chip"><input type="radio" name="mtt" id="mtt-nt" value="nt">신약</label>
+        <label class="chip"><input type="radio" name="mtt" id="mtt-all" value="all">구약 + 신약</label>
+      </div>
       <div class="opts">
         <label class="chip numchip"><span>책</span><input type="text" class="bookin" id="mb-from" list="mb-list" autocomplete="off" aria-label="암송 시작 책"><span>~</span><input type="text" class="bookin" id="mb-to" list="mb-list" autocomplete="off" aria-label="암송 끝 책"></label>
       </div>
@@ -484,13 +489,17 @@ let kOv = null, cOv = null;
 function withOv(k, c, f){ const a=kOv, b=cOv; kOv=k; cOv=c; try { return f(); } finally { kOv=a; cOv=b; } }
 const kind = () => document.querySelector('input[name="k"]:checked').value;
 const memN = () => { const x = parseInt($("m-num").value,10); return x>=0 ? x : 5; };
-function findBook(str, t){
+const memT = () => (document.querySelector('input[name="mtt"]:checked')||{}).value || ui.t;
+const memSrc = () => memT()==="all" ? MEMQ.ot.concat(MEMQ.nt) : MEMQ[memT()];
+const memBooks = () => [...new Set(memSrc().map(q=>q.b))].sort((a,b)=>a-b);
+function findBook(str){
   str = (str||"").trim().replace(/\s+/g,""); if (!str) return null;
-  const bs = [...new Set(DATA[t].map(q=>q.b).concat(MEMQ[t].map(q=>q.b)))].sort((a,b)=>a-b);
+  const ts = memT()==="all" ? ["ot","nt"] : [memT()];
+  const bs = [...new Set(ts.flatMap(t=>DATA[t].map(q=>q.b).concat(MEMQ[t].map(q=>q.b))))].sort((a,b)=>a-b);
   return bs.find(b=>DATA.books[b]===str) ?? bs.find(b=>ABBR[DATA.books[b]]===str) ?? bs.find(b=>DATA.books[b].startsWith(str)) ?? -1;
 }
 function memRange(){
-  let a = findBook($("mb-from").value, ui.t), z = findBook($("mb-to").value, ui.t);
+  let a = findBook($("mb-from").value), z = findBook($("mb-to").value);
   const bad = [a===-1 && $("mb-from").value.trim(), z===-1 && $("mb-to").value.trim()].filter(Boolean);
   if (a===-1) a = null; if (z===-1) z = null;
   if (a!=null && z!=null && a>z) [a,z] = [z,a];
@@ -502,7 +511,7 @@ function basePool(){
   const f = document.querySelector('input[name="f"]:checked').value;
   const o = document.querySelector('input[name="o"]:checked').value;
   const k = kOv || kind();
-  let qs = (k!=="m" ? DATA[t] : []).concat(k!=="q" ? MEMQ[t] : []).filter(q => q.k==="mem" ? memIn(q) : (!sel.size || sel.has(q.b)));
+  let qs = (k!=="m" ? DATA[t] : []).concat(k!=="q" ? memSrc() : []).filter(q => q.k==="mem" ? memIn(q) : (!sel.size || sel.has(q.b)));
   if (k==="qm") qs.sort((a,b)=>a.b-b.b);
   if (f==="new") qs = qs.filter(q=>!(q.id in rec));
   if (f==="wrong") qs = qs.filter(q=>rec[q.id]===0);
@@ -589,6 +598,7 @@ function renderYears(){
 }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 function selLabel(){
+  if (kind()==="m"){ const {a,z} = memRange(); return `암송 ${{ot:"구약",nt:"신약",all:"구약+신약"}[memT()]}` + (a==null&&z==null ? "" : ` ${a!=null?DATA.books[a]:"처음"}~${z!=null?DATA.books[z]:"끝"}`); }
   const t = ui.t, sel = ui.books[t];
   if (!sel.length) return (t==="ot"?"구약":"신약")+" 전체";
   const names = sel.slice().sort((a,b)=>a-b).map(b=>DATA.books[b]);
@@ -596,13 +606,14 @@ function selLabel(){
 }
 function renderMemRange(){
   const box = $("mrange-box"); box.hidden = kind()==="q"; if (box.hidden) return;
-  const bs = [...new Set(MEMQ[ui.t].map(q=>q.b))].sort((a,b)=>a-b);
+  if (!document.querySelector('input[name="mtt"]:checked')) $("mtt-"+(ui.mtt||ui.t)).checked = true;
+  const bs = memBooks();
   $("mb-list").innerHTML = bs.map(b=>`<option value="${DATA.books[b]}">`).join("");
   $("mb-from").placeholder = DATA.books[bs[0]]; $("mb-to").placeholder = DATA.books[bs[bs.length-1]];
   const {a, z, bad} = memRange(), n = withOv("m", null, basePool).length;
   const rng = a==null && z==null ? "전체" : `${a!=null?DATA.books[a]:"처음"} ~ ${z!=null?DATA.books[z]:"끝"}`;
-  $("mrange-head").textContent = `암송 범위 · ${ui.t==="ot"?"구약":"신약"} ${rng} · ${n}구절`;
-  $("mrange-hint").textContent = bad.length ? `‘${bad.join("’, ‘")}’에 해당하는 책을 찾지 못했습니다. 구약/신약 선택을 확인해 주세요.` : "책 이름이나 약자(예: 창, 시, 마)를 입력하세요. 비워 두면 처음이나 끝까지입니다.";
+  $("mrange-head").textContent = `암송 범위 · ${{ot:"구약",nt:"신약",all:"구약+신약"}[memT()]} ${rng} · ${n}구절`;
+  $("mrange-hint").textContent = bad.length ? `‘${bad.join("’, ‘")}’에 해당하는 책을 찾지 못했습니다. 위의 구약/신약 선택을 확인해 주세요.` : "책 이름이나 약자(예: 창, 시, 마)를 입력하세요. 비워 두면 처음이나 끝까지입니다.";
 }
 function pickCount(n){
   if (cOv!=null) return Math.min(n, cOv);
@@ -643,7 +654,7 @@ $("index").addEventListener("click", e=>{
   else return;
   store.set("ui",ui); renderIndex();
 });
-document.querySelectorAll("#home .seg button").forEach(b=>b.onclick=()=>{ ui.t=b.dataset.t; store.set("ui",ui); $("mb-from").value = ui.mb?.[ui.t]?.[0]||""; $("mb-to").value = ui.mb?.[ui.t]?.[1]||""; renderIndex(); });
+document.querySelectorAll("#home .seg button").forEach(b=>b.onclick=()=>{ ui.t=b.dataset.t; store.set("ui",ui); renderIndex(); });
 document.querySelectorAll('#home input[type="radio"]').forEach(r=>r.onchange=updateGo);
 document.querySelectorAll('input[name="mr"]').forEach(r=>r.addEventListener("change", ()=>{ ui.mr = r.value; store.set("ui",ui); updateGo(); }));
 if (ui.mr && ui.mix!==undefined && !ui.mix && ui.mr!=="1") ui.mr = "1";
@@ -654,8 +665,11 @@ $("c-custom").addEventListener("change", ()=>$("c-num").focus());
 if (ui.cnum) $("c-num").value = ui.cnum;
 if (ui.mnum!=null) $("m-num").value = ui.mnum;
 $("m-num").addEventListener("input", ()=>{ ui.mnum = $("m-num").value; store.set("ui",ui); updateGo(); });
-if (ui.mb){ $("mb-from").value = ui.mb[ui.t]?.[0]||""; $("mb-to").value = ui.mb[ui.t]?.[1]||""; }
-["mb-from","mb-to"].forEach(id=>$(id).addEventListener("input", ()=>{ ui.mb = ui.mb||{}; ui.mb[ui.t] = [$("mb-from").value, $("mb-to").value]; store.set("ui",ui); updateGo(); }));
+if (ui.mtt) $("mtt-"+ui.mtt).checked = true;
+const loadMb = () => { $("mb-from").value = ui.mb?.[memT()]?.[0]||""; $("mb-to").value = ui.mb?.[memT()]?.[1]||""; };
+loadMb();
+document.querySelectorAll('input[name="mtt"]').forEach(r=>r.addEventListener("change", ()=>{ ui.mtt = r.value; store.set("ui",ui); loadMb(); updateGo(); }));
+["mb-from","mb-to"].forEach(id=>$(id).addEventListener("input", ()=>{ ui.mb = ui.mb||{}; ui.mb[memT()] = [$("mb-from").value, $("mb-to").value]; store.set("ui",ui); updateGo(); }));
 $("go").onclick = ()=>{
   const qs = lastPool || pool(); if(!qs.length) return;
   const f = document.querySelector('input[name="f"]:checked').closest("label").textContent;
