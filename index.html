@@ -275,6 +275,17 @@ details.rvi[open] summary .t{font-weight:600}
     <div class="opts" id="memn-row" hidden>
       <label class="chip numchip"><span>그중 암송</span><input type="number" id="m-num" inputmode="numeric" min="0" max="999" value="5" aria-label="암송 문제 수"><span>문제</span></label>
     </div>
+    <div class="years" id="mrange-box" hidden>
+      <span class="years-h" id="mrange-head">암송 범위</span>
+      <div class="opts">
+        <label class="chip"><input type="radio" name="msec" id="msec-all" value="all" checked>모든 구절</label>
+        <label class="chip"><input type="radio" name="msec" id="msec-1" value="1">1절</label>
+        <label class="chip"><input type="radio" name="msec" id="msec-2" value="2">2절 이상</label>
+      </div>
+      <div class="opts" id="mrange-nums" hidden>
+        <label class="chip numchip"><span>번호</span><input type="number" id="mrng-from" inputmode="numeric" min="1" max="999" placeholder="1" aria-label="암송 시작 번호"><span>~</span><input type="number" id="mrng-to" inputmode="numeric" min="1" max="999" aria-label="암송 끝 번호"><span>번</span></label>
+      </div>
+    </div>
   </section>
   <section class="group">
     <h2>문제 수</h2>
@@ -474,12 +485,19 @@ let kOv = null, cOv = null;
 function withOv(k, c, f){ const a=kOv, b=cOv; kOv=k; cOv=c; try { return f(); } finally { kOv=a; cOv=b; } }
 const kind = () => document.querySelector('input[name="k"]:checked').value;
 const memN = () => { const x = parseInt($("m-num").value,10); return x>=0 ? x : 5; };
+const memSec = () => (document.querySelector('input[name="msec"]:checked')||{}).value || "all";
+function memIn(q){
+  const sec = memSec(); if (sec==="all") return true;
+  if (q.m.s !== +sec) return false;
+  const a = parseInt($("mrng-from").value,10), z = parseInt($("mrng-to").value,10);
+  return !(a>0 && q.m.n<a) && !(z>0 && q.m.n>z);
+}
 function basePool(){
   const t = ui.t, sel = new Set(ui.books[t]);
   const f = document.querySelector('input[name="f"]:checked').value;
   const o = document.querySelector('input[name="o"]:checked').value;
   const k = kOv || kind();
-  let qs = (k!=="m" ? DATA[t] : []).concat(k!=="q" ? MEMQ[t] : []).filter(q => !sel.size || sel.has(q.b));
+  let qs = (k!=="m" ? DATA[t] : []).concat(k!=="q" ? MEMQ[t] : []).filter(q => (!sel.size || sel.has(q.b)) && (q.k!=="mem" || memIn(q)));
   if (k==="qm") qs.sort((a,b)=>a.b-b.b);
   if (f==="new") qs = qs.filter(q=>!(q.id in rec));
   if (f==="wrong") qs = qs.filter(q=>rec[q.id]===0);
@@ -571,6 +589,13 @@ function selLabel(){
   const names = sel.slice().sort((a,b)=>a-b).map(b=>DATA.books[b]);
   return names.length>2 ? `${names[0]} 외 ${names.length-1}권` : names.join(", ");
 }
+function renderMemRange(){
+  const box = $("mrange-box"); box.hidden = kind()==="q"; if (box.hidden) return;
+  const sec = memSec(); $("mrange-nums").hidden = sec==="all";
+  if (sec!=="all"){ const mx = Math.max(0, ...MEMQ[ui.t].filter(q=>q.m.s===+sec).map(q=>q.m.n)); $("mrng-to").placeholder = mx; $("mrng-from").max = $("mrng-to").max = mx; }
+  const n = withOv("m", null, basePool).length;
+  $("mrange-head").textContent = `암송 범위 · ${ui.t==="ot"?"구약":"신약"} ${n}구절`;
+}
 function pickCount(n){
   if (cOv!=null) return Math.min(n, cOv);
   const v = document.querySelector('input[name="c"]:checked').value;
@@ -584,6 +609,7 @@ function updateGo(){
   $("go").disabled = !n;
   const c = pickCount(n);
   $("memn-row").hidden = kind()!=="qm";
+  renderMemRange();
   $("go").textContent = n ? `${selLabel()} · ${pastLabel() || ""}${pastLabel()?" · ":""}${(qs.mix||qs.fixed ? n : c).toLocaleString()}문제 풀기` : "조건에 맞는 문제가 없습니다";
   let hint = "";
   if (n && qs.qm){
@@ -620,6 +646,11 @@ $("c-custom").addEventListener("change", ()=>$("c-num").focus());
 if (ui.cnum) $("c-num").value = ui.cnum;
 if (ui.mnum!=null) $("m-num").value = ui.mnum;
 $("m-num").addEventListener("input", ()=>{ ui.mnum = $("m-num").value; store.set("ui",ui); updateGo(); });
+if (ui.msec){ const r = $("msec-"+ui.msec); if (r) r.checked = true; }
+if (ui.mfrom) $("mrng-from").value = ui.mfrom;
+if (ui.mto) $("mrng-to").value = ui.mto;
+document.querySelectorAll('input[name="msec"]').forEach(r=>r.addEventListener("change", ()=>{ ui.msec = r.value; store.set("ui",ui); }));
+["mrng-from","mrng-to"].forEach(id=>$(id).addEventListener("input", ()=>{ ui.mfrom = $("mrng-from").value; ui.mto = $("mrng-to").value; store.set("ui",ui); updateGo(); }));
 $("go").onclick = ()=>{
   const qs = lastPool || pool(); if(!qs.length) return;
   const f = document.querySelector('input[name="f"]:checked').closest("label").textContent;
