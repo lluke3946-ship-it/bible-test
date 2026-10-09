@@ -212,11 +212,26 @@ details.rvi[open] summary .t{font-weight:600}
 .years .chip .n{font-size:11px}
 .mixr{display:inline-flex;flex-wrap:wrap;gap:8px}
 #mix-row[hidden]{display:none!important}
+.sthead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid var(--ink);padding-bottom:8px}
+.sthead h2{font-family:var(--serif);font-size:24px;letter-spacing:0;color:var(--ink);font-weight:700}
+.sthead span{font-size:13px;color:var(--ink3)}
+.sti{display:flex;flex-direction:column;gap:10px;padding:18px 0;border-bottom:1px solid var(--line)}
+.sti .qtext{font-size:17px}
+.sti .qtext .qn{font-size:13px}
+.sti .verse{font-size:16px}
+.sti .choice{font-size:15px;padding:9px 12px}
+.sti.closed .redans{color:transparent;background:var(--sunk);border-radius:3px}
+.sti.closed .choice.right{border-color:var(--line);background:var(--surface)}
+.sti.closed .choice.right .k{background:transparent;border-color:var(--ink3);color:var(--ink2)}
+.sti.closed .answer,.sti.closed .tip{display:none}
+.sti .peek{align-self:flex-start;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 14px;font-size:13px;font-weight:600;color:var(--ink2)}
+.sti:not(.closed) .peek{display:none}
+.stsec{font-size:13px;letter-spacing:.06em;color:var(--red);font-weight:600;padding:22px 0 6px;border-bottom:1px solid var(--line)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 <div class="wrap" id="home">
-  <nav class="nav" aria-label="메뉴"><button aria-current="page">문제풀이</button><button data-go="mem">암송</button></nav>
+  <nav class="nav" aria-label="메뉴"><button aria-current="page">문제풀이</button><button data-go="study">학습</button><button data-go="mem">암송</button></nav>
   <header class="mast">
     <h1>성경문제집 <em>풀이</em></h1>
   </header>
@@ -330,8 +345,32 @@ details.rvi[open] summary .t{font-weight:600}
   <div class="start" id="rv-act"></div>
 </div>
 
+<div class="wrap" id="study" hidden>
+  <nav class="nav" aria-label="메뉴"><button data-go="home">문제풀이</button><button aria-current="page">학습</button><button data-go="mem">암송</button></nav>
+  <header class="mast"><h1>말씀 <em>학습</em></h1></header>
+  <div class="seg" role="group" aria-label="구약/신약" id="st-seg">
+    <button data-t="ot" aria-pressed="true">구약</button>
+    <button data-t="nt" aria-pressed="false">신약</button>
+  </div>
+  <section class="index" id="st-index" aria-label="책 선택"></section>
+  <section class="group">
+    <div class="opts">
+      <label class="chip"><input type="radio" name="sf" id="sf-all" value="all" checked>전체</label>
+      <label class="chip"><input type="radio" name="sf" id="sf-past" value="past">기출</label>
+      <label class="chip"><input type="radio" name="sf" id="sf-wrong" value="wrong">틀린 문제</label>
+    </div>
+    <div class="seg" role="group" aria-label="정답 표시" id="st-show">
+      <button data-s="1" aria-pressed="true">정답 보기</button>
+      <button data-s="0" aria-pressed="false">정답 가리기</button>
+    </div>
+  </section>
+  <div class="sthead" id="st-head"></div>
+  <div class="vlist" id="st-list"></div>
+  <div class="start" id="st-act"></div>
+</div>
+
 <div class="wrap" id="mem" hidden>
-  <nav class="nav" aria-label="메뉴"><button data-go="home">문제풀이</button><button aria-current="page">암송</button></nav>
+  <nav class="nav" aria-label="메뉴"><button data-go="home">문제풀이</button><button data-go="study">학습</button><button aria-current="page">암송</button></nav>
   <header class="mast">
     <div class="eyebrow">수련목회자 선발고시 · 개역개정</div>
     <h1>암송 <em>구절</em></h1>
@@ -832,12 +871,64 @@ $("rv-tabs").onclick = e=>{ const b=e.target.closest("button"); if(!b) return; r
 document.querySelectorAll('input[name="rvt"]').forEach(r=>r.onchange=renderReview);
 $("rv-back").onclick = ()=>show("home");
 
+/* ---------- 학습 ---------- */
+const st = Object.assign({t:"ot", b:0, show:true}, store.get("st", {}));
+function studyQs(){
+  const f = document.querySelector('input[name="sf"]:checked').value;
+  const keep = q => q.b===st.b && (f==="all" || (f==="past" ? q.y : rec[q.id]===0));
+  return {qs: DATA[st.t].filter(keep), ms: MEMQ[st.t].filter(keep)};
+}
+function studyItem(q, n){
+  let h = `<article class="sti${st.show?"":" closed"}" data-id="${q.id}">`;
+  if (q.k==="mem"){
+    h += `<div class="vhead"><span class="vref">${esc(q.m.ref)}</span></div>`;
+    h += st.show ? vlines(q.m,"full") : vlines(q.m,"start");
+    if (q.m.tip) h += `<div class="tip"><b>외우는 요령</b>${q.m.tip.map(esc).join("<br>")}</div>`;
+  } else {
+    h += `<p class="qtext"><span class="qn">${n}</span>${rich(q.q,"answer")}</p>`;
+    (q.L||[]).forEach(l=>{ const v = /^\s*[“"]/.test(l) || /\{\{\(/.test(l);
+      h += v ? `<p class="verse">${rich(l.trim(),"answer")}</p>` : `<div class="lines">${rich(l,"answer")}</div>`; });
+    if (q.o) h += `<ul class="choices">` + q.o.map((o,i)=>`<li><div class="choice static${o[1]?" right":""}"><span class="k">${i+1}</span><span>${esc(o[0])}</span></div></li>`).join("") + `</ul>`;
+    if (q.a) h += `<div class="answer"><span class="lbl">정답</span><span class="val">${esc(q.a)}</span></div>`;
+    if (q.tip) h += `<div class="tip"><b>메모</b>${q.tip.map(esc).join("<br>")}</div>`;
+  }
+  h += `<button class="peek">정답 보기</button></article>`;
+  return h;
+}
+function renderStudy(){
+  $("st-seg").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.t===st.t));
+  $("st-show").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed", (b.dataset.s==="1")===st.show));
+  const cnt = {}; DATA[st.t].forEach(q=>cnt[q.b]=(cnt[q.b]||0)+1);
+  if (!cnt[st.b]) st.b = +Object.keys(cnt)[0];
+  $("st-index").innerHTML = GROUPS[st.t].map(([g,a,z])=>{
+    const tabs = []; for (let b=a;b<=z;b++){ if(!cnt[b]) continue; const nm = DATA.books[b];
+      tabs.push(`<button class="tab" data-b="${b}" aria-pressed="${b===st.b}" title="${nm}"><span class="ab">${ABBR[nm]}</span><span class="nm">${nm}</span><span class="cnt">${cnt[b]}문제</span></button>`); }
+    return `<div class="group"><div class="group-h"><h2>${g}</h2></div><div class="tabs">${tabs.join("")}</div></div>`;
+  }).join("");
+  const {qs, ms} = studyQs();
+  $("st-head").innerHTML = `<h2>${DATA.books[st.b]}</h2><span>문제 ${qs.length}${ms.length?` · 암송 ${ms.length}`:""}</span>`;
+  let h = qs.map((q,i)=>studyItem(q,i+1)).join("");
+  if (ms.length) h += `<div class="stsec">${DATA.books[st.b]} 암송 구절</div>` + ms.map(q=>studyItem(q)).join("");
+  $("st-list").innerHTML = h || `<p class="muted">조건에 맞는 문제가 없습니다.</p>`;
+  $("st-act").innerHTML = qs.length+ms.length ? `<button class="btn primary" id="st-go">${DATA.books[st.b]} ${qs.length+ms.length}문제 풀기</button>` : "";
+  if ($("st-go")) $("st-go").onclick = ()=>startSession(qs.concat(ms).map(q=>q.id), `${DATA.books[st.b]} 학습 후 풀기`);
+  store.set("st", st);
+}
+$("st-seg").onclick = e=>{ const b=e.target.closest("button"); if(!b) return; st.t=b.dataset.t; st.b=-1; renderStudy(); window.scrollTo(0,0); };
+$("st-show").onclick = e=>{ const b=e.target.closest("button"); if(!b) return; st.show = b.dataset.s==="1"; renderStudy(); };
+$("st-index").onclick = e=>{ const b=e.target.closest(".tab"); if(!b) return; st.b=+b.dataset.b; renderStudy();
+  $("st-head").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block:"start"}); };
+document.querySelectorAll('input[name="sf"]').forEach(r=>r.onchange=renderStudy);
+$("st-list").onclick = e=>{ const p=e.target.closest(".peek"); if(!p) return; const it=p.closest(".sti"); it.classList.remove("closed");
+  const q = ALL[it.dataset.id]; if (q.k==="mem"){ const ol = it.querySelector(".vtext"); ol.outerHTML = vlines(q.m,"full"); } };
+
 function show(v){
-  for (const s of ["home","quiz","result","mem","card","review"]) $(s).hidden = s!==v;
+  for (const s of ["home","quiz","result","mem","card","review","study"]) $(s).hidden = s!==v;
+  if (v==="study") renderStudy();
   if (v==="review") renderReview();
   if (v==="home"){ renderStats(); renderIndex(); }
   if (v==="mem") renderMem();
-  ui.view = (v==="mem"||v==="card") ? "mem" : "home"; store.set("ui",ui);
+  ui.view = (v==="mem"||v==="card") ? "mem" : v==="study" ? "study" : "home"; store.set("ui",ui);
   window.scrollTo(0,0);
 }
 
@@ -932,7 +1023,7 @@ document.addEventListener("keydown", e=>{
   if (e.key===" "||e.key==="Enter"){ const b=$("c-line")||$("c-ok"); if(b){ e.preventDefault(); b.click(); } }
 });
 
-show(ui.view==="mem" ? "mem" : "home");
+show(ui.view==="mem" ? "mem" : ui.view==="study" ? "study" : "home");
 </script>
 
 </body></html>
