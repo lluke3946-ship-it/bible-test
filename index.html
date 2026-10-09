@@ -592,6 +592,18 @@ function pool(){
   out.fixed = true; out.qm = {q: qp.length, m: mp.length, want: memN(), avail: M.length};
   return out;
 }
+// 책별 비율 배분: 큰 책은 많이, 작은 책도 최소 1문제 (문제 수가 책 수보다 적으면 일부 책은 0)
+function proportional(qs, c){
+  const groups = new Map(); qs.forEach((q,i)=>{ if (!groups.has(q.b)) groups.set(q.b, []); groups.get(q.b).push(i); });
+  const G = [...groups.values()], n = qs.length;
+  const want = G.map(g=>c*g.length/n), quota = want.map((w,k)=>Math.min(G[k].length, c>=G.length ? Math.max(1, Math.floor(w)) : Math.floor(w)));
+  let sum = quota.reduce((a,b)=>a+b,0);
+  const byRem = () => G.map((g,k)=>k).sort((a,b)=>(want[b]-quota[b])-(want[a]-quota[a]) || Math.random()-0.5);
+  while (sum < c){ let moved = false; for (const k of byRem()){ if (sum>=c) break; if (quota[k]<G[k].length){ quota[k]++; sum++; moved = true; } } if (!moved) break; }
+  while (sum > c){ const k = byRem().reverse().find(k=>quota[k] > (c>=G.length?1:0)); if (k===undefined) break; quota[k]--; sum--; }
+  const idx = []; G.forEach((g,k)=>{ shuffle(g.slice()).slice(0, quota[k]).forEach(i=>idx.push(i)); });
+  return idx.sort((a,b)=>a-b).map(i=>qs[i]);
+}
 function pool1(){
   let qs = basePool();
   if (isPast()){
@@ -611,7 +623,15 @@ function pool1(){
       return out;
     }
   }
-  if (document.querySelector('input[name="o"]:checked').value==="rnd") qs = shuffle(qs.slice());
+  const rnd = document.querySelector('input[name="o"]:checked').value==="rnd";
+  const c = pickCount(qs.length), nb = new Set(qs.map(q=>q.b)).size;
+  if (c < qs.length && nb > 1){
+    // 일부만 풀 때: 책마다 문제 수 비율대로 나눠 뽑는다 (순서대로 = 책 순서, 무작위 = 전체 섞기)
+    const pick = proportional(qs, c), out = rnd ? shuffle(pick) : pick;
+    out.fixed = true; out.prop = {books: new Set(pick.map(q=>q.b)).size, of: nb, total: qs.length};
+    return out;
+  }
+  if (rnd) qs = shuffle(qs.slice());
   return qs;
 }
 function renderYears(){
@@ -668,7 +688,9 @@ function updateGo(){
     const per = {}; qs.slice(0,c).forEach(q=>{ const y = qs.asg.get(q.id); per[y]=(per[y]||0)+1; });
     const ys = Object.keys(per).sort();
     hint = `기출 ${n.toLocaleString()}문제 중 ${c.toLocaleString()}문제를 무작위로 냅니다`;
-  } else if (n) hint = `조건에 맞는 문제 ${n.toLocaleString()}개 중 ${c.toLocaleString()}개를 풉니다.` + (document.querySelector('input[name="o"]:checked').value==="rnd" ? " 무작위로 뽑습니다." : " 앞에서부터 차례로 풉니다.");
+  } else if (n && qs.prop){
+    hint = `조건에 맞는 문제 ${qs.prop.total.toLocaleString()}개에서 책마다 문제 수 비율대로 ${n.toLocaleString()}문제를 골라(${qs.prop.books}권) ` + (document.querySelector('input[name="o"]:checked').value==="rnd" ? "순서를 섞어서 냅니다." : "책 순서대로 냅니다.");
+  } else if (n) hint = `조건에 맞는 문제 ${n.toLocaleString()}개를 모두 풉니다.` + (document.querySelector('input[name="o"]:checked').value==="rnd" ? " 순서를 섞어서 냅니다." : " 책 순서대로 냅니다.");
   $("c-hint").textContent = hint;
 }
 $("index").addEventListener("click", e=>{
