@@ -1175,12 +1175,21 @@ function verseGroups(r){
 }
 // 암송 난이도: 쉬움 = 절마다 첫 두 단어, 보통 = 절마다 첫 단어, 어려움 = 맨 처음 한 단어만
 const MDIFF = {easy:"쉬움", normal:"보통", hard:"어려움"};
-const MDIFF_HINT = {easy:"절마다 처음 두 단어를 보여줍니다.", normal:"절마다 첫 단어를 보여줍니다.", hard:"2절 이상인 구절도 맨 처음 한 단어만 보여줍니다."};
+const MDIFF_HINT = {easy:"절마다 앞부분 2~4단어를 보여줍니다. 짧은 단어는 4단어까지, 긴 단어는 2~3단어입니다.", normal:"절마다 앞부분 2~3단어를 보여줍니다.", hard:"2절 이상인 구절도 맨 처음 한 단어만 보여줍니다."};
+// 쉬움: 글자 수(띄어쓰기 제외) 13자 안에서 2~4단어 / 보통: 절이 짧으면 2단어, 길면 3단어
+function easyCount(words){
+  let n = 0, len = 0;
+  for (const w of words){ if (n>=4) break; if (n>=2 && len + w.length > 13) break; len += w.length; n++; }
+  return n;
+}
 function memCues(r, d){
   const gs = verseGroups(r).map(g=>({v:g.v, words:g.items.map(([x])=>x.t).join(" ").split(/\s+/).filter(Boolean)}));
   if (d==="hard") return [{v:gs[0].v, w:gs[0].words[0]}];
-  const n = d==="easy" ? 2 : 1;
-  return gs.map(g=>({v:g.v, w:g.words.slice(0,n).join(" ")}));
+  return gs.map(g=>{
+    let n = d==="easy" ? easyCount(g.words) : (g.words.length>=6 ? 3 : 2);
+    n = Math.max(1, Math.min(n, g.words.length-1));
+    return {v:g.v, w:g.words.slice(0,n).join(" ")};
+  });
 }
 function verseText(r){ return verseGroups(r).map(g=>g.items.map(([x])=>x.t).join(" ")).join("\n"); }
 function vlines(r, mode){
