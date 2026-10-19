@@ -318,7 +318,7 @@ details.rvi[open] summary .t{font-weight:600}
     <p class="hint" id="mdiff-hint" hidden></p>
     <div class="years" id="mrange-box" hidden>
       <span class="years-h" id="mrange-head">암송 범위</span>
-      <div class="opts">
+      <div class="opts" id="mtt-row">
         <label class="chip"><input type="radio" name="mtt" id="mtt-ot" value="ot">구약</label>
         <label class="chip"><input type="radio" name="mtt" id="mtt-nt" value="nt">신약</label>
         <label class="chip"><input type="radio" name="mtt" id="mtt-all" value="all">구약 + 신약</label>
@@ -521,7 +521,8 @@ let kOv = null, cOv = null;
 function withOv(k, c, f){ const a=kOv, b=cOv; kOv=k; cOv=c; try { return f(); } finally { kOv=a; cOv=b; } }
 const kind = () => document.querySelector('input[name="k"]:checked').value;
 const memN = () => { const x = parseInt($("m-num").value,10); return x>=0 ? x : 5; };
-const memT = () => (document.querySelector('input[name="mtt"]:checked')||{}).value || ui.t;
+// 성경문제 + 암송: 암송은 위에서 고른 구약/신약을 그대로 따른다
+const memT = () => kind()==="qm" ? ui.t : ((document.querySelector('input[name="mtt"]:checked')||{}).value || ui.t);
 const memSrc = () => memT()==="all" ? MEMQ.ot.concat(MEMQ.nt) : MEMQ[memT()];
 const memBooks = () => [...new Set(memSrc().map(q=>q.b))].sort((a,b)=>a-b);
 function findBook(str){
@@ -727,6 +728,8 @@ function selLabel(){
 }
 function renderMemRange(){
   const box = $("mrange-box"); box.hidden = kind()==="q"; if (box.hidden) return;
+  $("mtt-row").hidden = kind()==="qm";
+  if (renderMemRange.last !== memT()){ renderMemRange.last = memT(); $("mb-from").value = ui.mb?.[memT()]?.[0]||""; $("mb-to").value = ui.mb?.[memT()]?.[1]||""; }
   if (!document.querySelector('input[name="mtt"]:checked')) $("mtt-"+(ui.mtt||ui.t)).checked = true;
   const bs = memBooks();
   $("mb-list").innerHTML = bs.map(b=>`<option value="${DATA.books[b]}">`).join("");
