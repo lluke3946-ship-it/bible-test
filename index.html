@@ -538,7 +538,10 @@ function memRange(){
   if (a!=null && z!=null && a>z) [a,z] = [z,a];
   return {a, z, bad};
 }
-function memIn(q){ const {a,z} = memRange(); return !(a!=null && q.b<a) && !(z!=null && q.b>z); }
+// 진급시험 암송 범위: 구약 열왕기상~전도서, 신약 마태복음~요한복음 + 로마서
+const EXAM_MEMRANGE = { ot: [["열왕기상","전도서"]], nt: [["마태복음","요한복음"],["로마서","로마서"]] };
+function examMemIn(q){ const r = EXAM_MEMRANGE[q.t]; if (ui.mode!=="jg" || !r) return true; return r.some(([a,z])=>q.b>=DATA.books.indexOf(a) && q.b<=DATA.books.indexOf(z)); }
+function memIn(q){ const {a,z} = memRange(); return examMemIn(q) && !(a!=null && q.b<a) && !(z!=null && q.b>z); }
 function basePool(){
   const t = ui.t, sel = new Set(ui.books[t]);
   const f = document.querySelector('input[name="f"]:checked').value;
@@ -736,7 +739,8 @@ function renderMemRange(){
   $("mb-from").placeholder = DATA.books[bs[0]]; $("mb-to").placeholder = DATA.books[bs[bs.length-1]];
   const {a, z, bad} = memRange(), n = withOv("m", null, basePool).length;
   const rng = a==null && z==null ? "전체" : `${a!=null?DATA.books[a]:"처음"} ~ ${z!=null?DATA.books[z]:"끝"}`;
-  $("mrange-head").textContent = `암송 범위 · ${{ot:"구약",nt:"신약",all:"구약+신약"}[memT()]} ${rng} · ${n}구절`;
+  const exr = ui.mode!=="jg" ? "" : " · 진급시험 범위(" + ({ot:"열왕기상~전도서", nt:"마태복음~요한복음, 로마서", all:"구약 열왕기상~전도서, 신약 마태복음~요한복음·로마서"}[memT()]) + ")";
+  $("mrange-head").textContent = `암송 범위 · ${{ot:"구약",nt:"신약",all:"구약+신약"}[memT()]} ${rng} · ${n}구절${exr}`;
   $("mrange-hint").textContent = bad.length ? `‘${bad.join("’, ‘")}’에 해당하는 책을 찾지 못했습니다. 위의 구약/신약 선택을 확인해 주세요.` : "책 이름이나 약자(예: 창, 시, 마)를 입력하세요. 비워 두면 처음이나 끝까지입니다.";
 }
 function pickCount(n){
