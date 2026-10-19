@@ -245,7 +245,10 @@ details.rvi[open] summary .t{font-weight:600}
     <button data-mode="sr" aria-pressed="true">수련목 준비</button>
     <button data-mode="jg" aria-pressed="false">진급시험 준비</button>
   </div>
-  <p class="hint" id="mode-hint" hidden>구약 전체를 풀 때 진급시험 출제 비율에 맞춰 책별로 문제를 뽑습니다.</p>
+  <div id="mode-hint" hidden class="years">
+    <span class="years-h">준회원 과정고시 출제 비율로 책별 문제를 뽑습니다 (구약·신약 전체를 고를 때)</span>
+    <div class="opts"><button class="btn" id="exam-go" style="padding:9px 14px">실전처럼: 60문제 + 암송 20</button></div>
+  </div>
   <div class="stats" id="stats"></div>
   <div class="resume" id="resume" hidden></div>
   <div class="seg" role="group" aria-label="구약/신약">
@@ -592,7 +595,7 @@ function pool(){
   const m = Math.min(M.length, memN(), c);
   const Q = withOv("q", c-m, pool1);
   let qp = Q.mix ? Q.slice() : Q.slice(0, c-m);
-  const mp = shuffle(M.slice()).slice(0, m);
+  const mp = examMem(M, m) || shuffle(M.slice()).slice(0, m);
   const seq = !isPast() && document.querySelector('input[name="o"]:checked').value==="seq";
   const out = seq ? qp.concat(mp).sort((a,b)=>a.b-b.b) : shuffle(qp.concat(mp));
   out.fixed = true; out.qm = {q: qp.length, m: mp.length, want: memN(), avail: M.length};
@@ -610,31 +613,71 @@ function proportional(qs, c){
   const idx = []; G.forEach((g,k)=>{ shuffle(g.slice()).slice(0, quota[k]).forEach(i=>idx.push(i)); });
   return idx.sort((a,b)=>a-b).map(i=>qs[i]);
 }
-// 진급시험 출제 비율 (구약 기출, 60문제 기준으로 받은 비율 · 합계 51)
-const EXAM_OT = [["창세기",6],["출애굽기",2],["레위기",2],["민수기",2],["신명기",2],["여호수아",2],["사사기",2],["사무엘상",4],["사무엘하",3],["열왕기상",4],["열왕기하",3],["역대상",2],["역대하",1],["에스라",1],["느헤미야",1],["욥기",2],["시편",5],["잠언",3],["전도서",1],["아가",1],["이사야",1],["예레미야~말라기",1]];
-function examBooks(name){ if (name==="예레미야~말라기"){ const a = DATA.books.indexOf("예레미야"), z = DATA.books.indexOf("말라기"); return new Set(Array.from({length:z-a+1},(_,i)=>a+i)); } return new Set([DATA.books.indexOf(name)]); }
-// 진급시험 준비 + 구약 전체일 때만 출제 비율을 쓴다
-const examOn = () => ui.mode==="jg" && ui.t==="ot" && !ui.books.ot.length;
+// 진급시험(준회원 과정고시) 출제 비율 · 각 60문제 + 암송 20
+const EXAM = {
+  ot: [["창세기",6],["출애굽기",5],["레위기",2],["민수기",2],["신명기",2],["여호수아",2],["사사기",2],["사무엘상",4],["사무엘하",3],["열왕기상",4],["열왕기하",3],["역대상",2],["역대하",1],["에스라",1],["느헤미야",1],["욥기",2],["시편",5],["잠언",3],["전도서",1],["아가",1],["이사야",2],["예레미야~말라기",6]],
+  nt: [["마태복음",6],["마가복음",3],["누가복음",4],["요한복음",6],["사도행전",7],["로마서",6],["고린도전서",6],["고린도후서",3],["갈라디아서",2],["에베소서",2],["빌립보서",1],["골로새서",1],["데살로니가전서",1],["디모데전서",1],["디모데후서",1],["빌레몬서",1],["히브리서",4],["야고보서",1],["요한일이삼서",1],["요한계시록",3]]
+};
+const EXAM_MEM = { nt: [["마태복음",8],["마가복음",1],["누가복음",2],["요한복음",7],["로마서",2]] };
+const EXAM_TYPE = { nt: {blank:27, text:7, mc:26} };   // 필답 27 · 단답 7 · 객관 26
+const TYPE_NAME = {blank:"필답", text:"단답", mc:"객관"};
+function examBooks(name){
+  const rng = (a,z) => { const i = DATA.books.indexOf(a), k = DATA.books.indexOf(z); return new Set(Array.from({length:k-i+1},(_,n)=>i+n)); };
+  if (name==="예레미야~말라기") return rng("예레미야","말라기");
+  if (name==="요한일이삼서") return rng("요한일서","요한삼서");
+  return new Set([DATA.books.indexOf(name)]);
+}
+function scaleQuota(list, c){
+  const W = list.reduce((a,x)=>a+x[1],0), want = list.map(x=>c*x[1]/W), q = want.map(Math.floor);
+  let sum = q.reduce((a,b)=>a+b,0);
+  const order = list.map((x,k)=>k).sort((a,b)=>(want[b]-q[b])-(want[a]-q[a]) || list[b][1]-list[a][1]);
+  for (let i=0; sum<c && i<order.length; i++){ q[order[i]]++; sum++; }
+  return q;
+}
+const qtype = q => q.o ? "mc" : q.a ? "text" : "blank";
+// 여러 권을 묶은 칸(예레미야~말라기 등)은 같은 책이 겹치지 않게 돌아가며 뽑는다
+function spreadBooks(list){ const by = new Map(); shuffle(list.slice()).forEach(q=>{ if (!by.has(q.b)) by.set(q.b, []); by.get(q.b).push(q); }); const lanes = shuffle([...by.values()]), out = []; for (let i=0; out.length<list.length; i++) for (const l of lanes) if (l[i]) out.push(l[i]); return out; }
+// 책 안에서 고를 때 유형(필답·단답·객관) 목표에 가장 모자란 쪽을 먼저 고른다
+function takeTyped(cands, n, need){
+  const out = [], pool = cands.slice();
+  while (out.length<n && pool.length){
+    let best = 0;
+    if (need){ let bd = -1e9; pool.forEach((q,i)=>{ const d = need[qtype(q)] ?? -1e9; if (d>bd){ bd = d; best = i; } }); }
+    const q = pool.splice(best,1)[0]; out.push(q); if (need) need[qtype(q)] = (need[qtype(q)]||0) - 1;
+  }
+  return out;
+}
+const examOn = () => ui.mode==="jg" && !!EXAM[ui.t] && !ui.books[ui.t].length && (kOv||kind())!=="m";
 function examPick(qs, preferPast){
-  const c = pickCount(qs.length), W = EXAM_OT.reduce((a,x)=>a+x[1],0);
-  const want = EXAM_OT.map(x=>c*x[1]/W), quota = want.map(Math.floor); let sum = quota.reduce((a,b)=>a+b,0);
-  const order = EXAM_OT.map((x,k)=>k).sort((a,b)=>(want[b]-quota[b])-(want[a]-quota[a]) || EXAM_OT[b][1]-EXAM_OT[a][1]);
-  for (let i=0; sum<c && i<order.length; i++){ quota[order[i]]++; sum++; }
+  const list = EXAM[ui.t], c = pickCount(qs.length), quota = scaleQuota(list, c);
+  const tt = EXAM_TYPE[ui.t], tsum = tt ? Object.values(tt).reduce((x,y)=>x+y,0) : 1;
+  const need = tt ? Object.fromEntries(Object.entries(tt).map(([k,v])=>[k, c*v/tsum])) : null;
   const ratio = !preferPast ? 0 : mixOn() ? mixRatio() : 1, pos = new Map(qs.map((q,i)=>[q,i]));
   const pick = [], per = [], fill = [];
-  EXAM_OT.forEach(([name],k)=>{
-    if (!quota[k]) return;
-    const bs = examBooks(name), inB = qs.filter(q=>bs.has(q.b));
-    const P = preferPast ? shuffle(inB.filter(q=>q.y)) : [], N = shuffle(preferPast ? inB.filter(q=>!q.y) : inB);
+  // 유형 맞추기가 잘 되도록 작은 칸부터 고른다
+  list.map((x,k)=>k).sort((a,b)=>quota[a]-quota[b] || Math.random()-0.5).forEach(k=>{
+    const name = list[k][0]; if (!quota[k]) return;
+    const bs = examBooks(name), inB = qs.filter(q=>bs.has(q.b)), multi = bs.size>1;
+    const order = l => multi ? spreadBooks(l) : shuffle(l.slice());
+    const P = preferPast ? order(inB.filter(q=>q.y)) : [], N = order(preferPast ? inB.filter(q=>!q.y) : inB);
     let np = Math.min(P.length, Math.round(quota[k]*ratio)), nn = Math.min(N.length, quota[k]-np); np = Math.min(P.length, quota[k]-nn);
-    const got = P.slice(0,np).concat(N.slice(0,nn));
+    const got = multi ? P.slice(0,np).concat(N.slice(0,nn)) : takeTyped(P, np, need).concat(takeTyped(N, nn, need));
+    if (multi && need) got.forEach(q=>need[qtype(q)]--);
     if (ratio===1 && nn>0) fill.push(name);
-    if (got.length){ pick.push(...got); per.push([name, got.length]); }
+    if (got.length){ pick.push(...got); per[k] = [name, got.length]; }
   });
   const seq = document.querySelector('input[name="o"]:checked').value!=="rnd";
   const out = seq ? pick.sort((a,b)=>pos.get(a)-pos.get(b)) : shuffle(pick);
-  out.fixed = true; out.exam = {per, fill, past: pick.filter(q=>q.y).length};
+  const types = {}; pick.forEach(q=>types[qtype(q)] = (types[qtype(q)]||0)+1);
+  out.fixed = true; out.exam = {per: per.filter(Boolean), fill, past: pick.filter(q=>q.y).length, types: tt ? types : null};
   return out;
+}
+// 진급시험 암송 비율 (신약: 마8 막1 눅2 요7 롬2)
+function examMem(M, m){
+  const list = EXAM_MEM[memT()]; if (ui.mode!=="jg" || !list) return null;
+  const q = scaleQuota(list, m), out = [];
+  list.forEach(([name],k)=>{ const b = DATA.books.indexOf(name); out.push(...shuffle(M.filter(x=>x.b===b)).slice(0, q[k])); });
+  return out.length ? out : null;
 }
 function pool1(){
   let qs = basePool();
@@ -714,6 +757,7 @@ function updateGo(){
   let hint = "";
   if (n && qs.qm){
     hint = `성경문제 ${qs.qm.q}문제 + 암송 ${qs.qm.m}문제를 ` + (!isPast() && document.querySelector('input[name="o"]:checked').value==="seq" ? "책 순서대로 냅니다" : "섞어서 무작위로 냅니다") +
+      (examOn() ? ` · 성경문제는 진급시험 출제 비율(책별${EXAM_TYPE[ui.t]?"·유형별":""})로` + (EXAM_MEM[memT()] ? ", 암송도 진급시험 비율로" : "") + ` 뽑습니다` : "") +
       (qs.qm.m < qs.qm.want ? (qs.qm.avail < qs.qm.want ? ` · 조건에 맞는 암송 구절이 ${qs.qm.avail}개뿐이라 ${qs.qm.m}문제만 넣었습니다` : ` · 전체 문제 수보다 많아 암송 ${qs.qm.m}문제로 맞췄습니다`) : "");
   } else if (n && qs.mix){
     const per = {}; qs.forEach(q=>{ if (q.y){ const y = qs.asg ? qs.asg.get(q.id) : pastYear(); per[y]=(per[y]||0)+1; } });
@@ -725,7 +769,8 @@ function updateGo(){
     hint = `기출 ${n.toLocaleString()}문제 중 ${c.toLocaleString()}문제를 무작위로 냅니다`;
   } else if (n && qs.exam){
     hint = `진급시험 비율로 ${n}문제` + (isPast() ? `(기출 ${qs.exam.past}문제)` : "") + `: ` + qs.exam.per.map(([b,k])=>`${b} ${k}`).join(" · ") +
-      (qs.exam.fill.length ? ` · ${qs.exam.fill.join(", ")}은(는) 기출 문제가 없어 일반 문제로 냅니다` : "");
+      (qs.exam.types ? ` · 유형: ` + ["blank","text","mc"].map(t=>`${TYPE_NAME[t]} ${qs.exam.types[t]||0}`).join(" · ") : "") +
+      (qs.exam.fill.length ? ` · ${qs.exam.fill.join(", ")}은(는) 기출 문제가 모자라 일반 문제로 채웁니다` : "");
   } else if (n && qs.prop){
     hint = `조건에 맞는 문제 ${qs.prop.total.toLocaleString()}개에서 책마다 문제 수 비율대로 ${n.toLocaleString()}문제를 골라(${qs.prop.books}권) ` + (document.querySelector('input[name="o"]:checked').value==="rnd" ? "순서를 섞어서 냅니다." : "책 순서대로 냅니다.");
   } else if (n) hint = `조건에 맞는 문제 ${n.toLocaleString()}개를 모두 풉니다.` + (document.querySelector('input[name="o"]:checked').value==="rnd" ? " 순서를 섞어서 냅니다." : " 책 순서대로 냅니다.");
@@ -755,6 +800,11 @@ if (ui.vary) $("vary-"+ui.vary).checked = true;
 function renderMode(){ ui.mode = ui.mode || "sr"; $("mode-seg").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.mode===ui.mode)); $("mode-hint").hidden = ui.mode!=="jg"; }
 $("mode-seg").onclick = e=>{ const b = e.target.closest("button"); if (!b) return; ui.mode = b.dataset.mode; store.set("ui",ui); renderMode(); updateGo(); };
 renderMode();
+$("exam-go").onclick = ()=>{
+  ui.books[ui.t] = []; $("k-qm").checked = true; $("c-custom").checked = true; $("c-num").value = 80; $("m-num").value = 20;
+  ui.cnum = "80"; ui.mnum = "20"; ui.mtt = ui.t; $("mtt-"+ui.t).checked = true; loadMb();
+  store.set("ui",ui); renderIndex(); $("go").scrollIntoView({block:"center"});
+};
 $("vary-hint").hidden = ui.vary!=="1";
 document.querySelectorAll('input[name="vary"]').forEach(r=>r.addEventListener("change", ()=>{ ui.vary = r.value; store.set("ui",ui); $("vary-hint").hidden = ui.vary!=="1"; updateGo(); }));
 document.querySelectorAll('input[name="mdiff"]').forEach(r=>r.addEventListener("change", ()=>{ ui.mdiff = r.value; store.set("ui",ui); updateGo(); }));
