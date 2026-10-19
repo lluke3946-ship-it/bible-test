@@ -574,7 +574,8 @@ let lastPool = null;
 function pastLabel(){
   if (!isPast()) return "";
   const y = pastYear(); if (y==="none") return "출제되지 않은 문제";
-  return mixOn() ? `기출 ${Math.round(mixRatio()*100)}% + 미출제` : "기출";
+  const ex = ui.t==="ot" && !ui.books.ot.length ? " · 진급시험 비율" : "";
+  return (mixOn() ? `기출 ${Math.round(mixRatio()*100)}% + 미출제` : "기출") + ex;
 }
 // 성경문제 + 암송: 암송 문제 수를 따로 정해서 섞는다
 function pool(){
@@ -604,8 +605,34 @@ function proportional(qs, c){
   const idx = []; G.forEach((g,k)=>{ shuffle(g.slice()).slice(0, quota[k]).forEach(i=>idx.push(i)); });
   return idx.sort((a,b)=>a-b).map(i=>qs[i]);
 }
+// 진급시험 출제 비율 (구약 기출, 60문제 기준으로 받은 비율 · 합계 51)
+const EXAM_OT = [["창세기",6],["출애굽기",2],["레위기",2],["민수기",2],["신명기",2],["여호수아",2],["사사기",2],["사무엘상",4],["사무엘하",3],["열왕기상",4],["열왕기하",3],["역대상",2],["역대하",1],["에스라",1],["느헤미야",1],["욥기",2],["시편",5],["잠언",3],["전도서",1],["아가",1],["이사야",1],["예레미야~말라기",1]];
+function examBooks(name){ if (name==="예레미야~말라기"){ const a = DATA.books.indexOf("예레미야"), z = DATA.books.indexOf("말라기"); return new Set(Array.from({length:z-a+1},(_,i)=>a+i)); } return new Set([DATA.books.indexOf(name)]); }
+function examPick(qs){
+  const c = pickCount(qs.length), W = EXAM_OT.reduce((a,x)=>a+x[1],0);
+  const want = EXAM_OT.map(x=>c*x[1]/W), quota = want.map(Math.floor); let sum = quota.reduce((a,b)=>a+b,0);
+  const order = EXAM_OT.map((x,k)=>k).sort((a,b)=>(want[b]-quota[b])-(want[a]-quota[a]) || EXAM_OT[b][1]-EXAM_OT[a][1]);
+  for (let i=0; sum<c && i<order.length; i++){ quota[order[i]]++; sum++; }
+  const ratio = mixOn() ? mixRatio() : 1, pos = new Map(qs.map((q,i)=>[q,i]));
+  const pick = [], per = [], fill = [];
+  EXAM_OT.forEach(([name],k)=>{
+    if (!quota[k]) return;
+    const bs = examBooks(name), inB = qs.filter(q=>bs.has(q.b));
+    const P = shuffle(inB.filter(q=>q.y)), N = shuffle(inB.filter(q=>!q.y));
+    let np = Math.min(P.length, Math.round(quota[k]*ratio)), nn = Math.min(N.length, quota[k]-np); np = Math.min(P.length, quota[k]-nn);
+    const got = P.slice(0,np).concat(N.slice(0,nn));
+    if (ratio===1 && nn>0) fill.push(name);
+    if (got.length){ pick.push(...got); per.push([name, got.length]); }
+  });
+  const seq = document.querySelector('input[name="o"]:checked').value!=="rnd";
+  const out = seq ? pick.sort((a,b)=>pos.get(a)-pos.get(b)) : shuffle(pick);
+  out.fixed = true; out.exam = {per, fill, past: pick.filter(q=>q.y).length};
+  return out;
+}
 function pool1(){
   let qs = basePool();
+  // 구약 전체 + 기출 문제: 진급시험 비율로 출제
+  if (isPast() && ui.t==="ot" && !ui.books.ot.length && qs.some(q=>q.y)) return examPick(qs);
   if (isPast()){
     const y = pastYear(), non = qs.filter(q=>!q.y);
     if (y==="none") qs = non;
@@ -688,6 +715,9 @@ function updateGo(){
     const per = {}; qs.slice(0,c).forEach(q=>{ const y = qs.asg.get(q.id); per[y]=(per[y]||0)+1; });
     const ys = Object.keys(per).sort();
     hint = `기출 ${n.toLocaleString()}문제 중 ${c.toLocaleString()}문제를 무작위로 냅니다`;
+  } else if (n && qs.exam){
+    hint = `진급시험 비율로 ${n}문제(기출 ${qs.exam.past}문제): ` + qs.exam.per.map(([b,k])=>`${b} ${k}`).join(" · ") +
+      (qs.exam.fill.length ? ` · ${qs.exam.fill.join(", ")}은(는) 기출 문제가 없어 일반 문제로 냅니다` : "");
   } else if (n && qs.prop){
     hint = `조건에 맞는 문제 ${qs.prop.total.toLocaleString()}개에서 책마다 문제 수 비율대로 ${n.toLocaleString()}문제를 골라(${qs.prop.books}권) ` + (document.querySelector('input[name="o"]:checked').value==="rnd" ? "순서를 섞어서 냅니다." : "책 순서대로 냅니다.");
   } else if (n) hint = `조건에 맞는 문제 ${n.toLocaleString()}개를 모두 풉니다.` + (document.querySelector('input[name="o"]:checked').value==="rnd" ? " 순서를 섞어서 냅니다." : " 책 순서대로 냅니다.");
