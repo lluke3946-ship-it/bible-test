@@ -606,7 +606,11 @@ function pool(){
   let qp = Q.mix ? Q.slice() : Q.slice(0, c-m);
   const mp = examMem(M, m) || shuffle(M.slice()).slice(0, m);
   const seq = !isPast() && document.querySelector('input[name="o"]:checked').value==="seq";
-  const out = seq ? qp.concat(mp).sort((a,b)=>a.b-b.b) : shuffle(qp.concat(mp));
+  // 성경문제를 먼저 내고, 암송은 맨 뒤에 몰아서 낸다
+  const mo = new Map(MEMQ.ot.concat(MEMQ.nt).map((q,i)=>[q,i]));
+  const qpart = seq ? qp.slice().sort((a,b)=>(a.t===b.t?0:a.t==="ot"?-1:1) || a.no-b.no) : shuffle(qp.slice());
+  const mpart = seq ? mp.slice().sort((a,b)=>mo.get(a)-mo.get(b)) : shuffle(mp.slice());
+  const out = qpart.concat(mpart);
   out.fixed = true; out.qm = {q: qp.length, m: mp.length, want: memN(), avail: M.length};
   return out;
 }
@@ -768,7 +772,7 @@ function updateGo(){
   $("go").textContent = n ? `${selLabel()} · ${exl}${pastLabel() || ""}${pastLabel()?" · ":""}${(qs.mix||qs.fixed ? n : c).toLocaleString()}문제 풀기` : "조건에 맞는 문제가 없습니다";
   let hint = "";
   if (n && qs.qm){
-    hint = `성경문제 ${qs.qm.q}문제 + 암송 ${qs.qm.m}문제를 ` + (!isPast() && document.querySelector('input[name="o"]:checked').value==="seq" ? "책 순서대로 냅니다" : "섞어서 무작위로 냅니다") +
+    hint = `성경문제 ${qs.qm.q}문제를 먼저 풀고, 암송 ${qs.qm.m}문제는 맨 뒤에 이어서 냅니다 (` + (!isPast() && document.querySelector('input[name="o"]:checked').value==="seq" ? "각각 책 순서대로" : "각각 순서를 섞어서") + `)` +
       (examOn() ? ` · 성경문제는 진급시험 출제 비율(책별${EXAM_TYPE[ui.t]?"·유형별":""})로` + (EXAM_MEM[memT()] ? ", 암송도 진급시험 비율로" : "") + ` 뽑습니다` : "") +
       (qs.qm.m < qs.qm.want ? (qs.qm.avail < qs.qm.want ? ` · 조건에 맞는 암송 구절이 ${qs.qm.avail}개뿐이라 ${qs.qm.m}문제만 넣었습니다` : ` · 전체 문제 수보다 많아 암송 ${qs.qm.m}문제로 맞췄습니다`) : "");
   } else if (n && qs.mix){
